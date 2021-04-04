@@ -6,12 +6,13 @@
 #include "integers.h"
 
 #define DEBUG 1
+#define MAX_ELEMENTS_FOR_COMPUTE 10
 
 #define NEED_ADD_LISP_EXPRESSION_TO_RESULT_AND_INC_CHAR 2
 
 #define ASCII_CODE(ch) (uint8_t) ch
-
 #define ASCII_CODE_ZERO ASCII_CODE('0')
+
 #define ASCII_CODE_NINE ASCII_CODE('9')
 
 #define IS_CHAR_NUMBER(ch)  ASCII_CODE(ch) >= ASCII_CODE_ZERO  && ASCII_CODE(ch) <= ASCII_CODE_NINE
@@ -29,7 +30,8 @@ void skipSpaces(char **currentChar) {
 int handleSymbol(
         char **currentChar,
 
-        int *result,
+        int *numbersForCompute,
+        int *inUseNumbersForCompute,
 
         uint32_t *openingBrackets,
         uint32_t *closingBrackets
@@ -55,7 +57,11 @@ int handleSymbol(
         default:
             if (IS_CHAR_NUMBER(**currentChar) || **currentChar == '-') {
                 uint32_t lengthOfInteger = getLengthOfStrInt(*currentChar);
-                *result += parseStrIntByLength(*currentChar, lengthOfInteger);
+                *(numbersForCompute + (*inUseNumbersForCompute)) = parseStrIntByLength(
+                        *currentChar,
+                        lengthOfInteger
+                );
+                (*inUseNumbersForCompute)++;
 
                 skipSymbols(currentChar, (int) (lengthOfInteger));
             } else {
@@ -67,7 +73,7 @@ int handleSymbol(
 }
 
 
-int getAmountOfSymbolsFromCurrentSymbolToClosingBracket(char* currentSymbol) {
+int getAmountOfSymbolsFromCurrentSymbolToClosingBracket(char *currentSymbol) {
     int amountOfSymbols = 0;
 
     for (; *currentSymbol != ')'; currentSymbol++) {
@@ -79,8 +85,9 @@ int getAmountOfSymbolsFromCurrentSymbolToClosingBracket(char* currentSymbol) {
 
 int lispToInt(const char *lispExpression) {
 /* | input:
-     !!!!! Note: Lisp expression must end  with $
-           If it not end with $, I not it's not my FAIL
+     [!!!] Note: If Lisp expression not valid, then it must end  with $
+           If it not end with $, then program go in INFINITY LOOP,
+           and it's not my FAIL
 */
 
     int result = 0;
@@ -88,15 +95,18 @@ int lispToInt(const char *lispExpression) {
     uint32_t openingBrackets = 0;
     uint32_t closingBrackets = 0;
 
+    int numbersForCompute[MAX_ELEMENTS_FOR_COMPUTE];
+    int inUseNumbersForCompute = 0;
+
     char *current_symbol = (char *) lispExpression;
 
     while (((openingBrackets != closingBrackets) || (openingBrackets == 0)) && (*current_symbol != '$')) {
         if (handleSymbol(
                 &current_symbol,
-                &result,
+                (int *) numbersForCompute, &inUseNumbersForCompute,
                 &openingBrackets, &closingBrackets
         ) == NEED_ADD_LISP_EXPRESSION_TO_RESULT_AND_INC_CHAR) {
-            result += lispToInt(current_symbol);
+            numbersForCompute[inUseNumbersForCompute] += lispToInt(current_symbol);
             current_symbol += getAmountOfSymbolsFromCurrentSymbolToClosingBracket(current_symbol);
         }
     }
@@ -145,13 +155,13 @@ int main() {
     assert(lengthOfNegativeParsedInt == 4);
     assert(negativeParsedInt == -100);
 
-    int lispResult = lispToInt("(+ -100 50)");
+    int lispResult = lispToInt("(+ -100 50 (+ 10 101 109 -10))");
 
 #if DEBUG
     printf("result of LISP expression is [ %d ]\n", lispResult);
 #endif
 
-    assert(lispResult == -50);
+    assert(lispResult == 160);
 
     return 0;
 }

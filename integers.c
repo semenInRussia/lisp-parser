@@ -10,8 +10,8 @@
 #define CHAR_TO_NUM(ch) ASCII_CODE(ch) - ASCII_CODE_ZERO
 
 
-uint32_t getLengthOfStrInt(char *stringInt) {
-    uint32_t length = 0;
+int getLengthOfStrInt(char *stringInt) {
+    int length = 0;
     char *currentSymbol = stringInt;
 
     for (; IS_CHAR_NUMBER(*currentSymbol) || (*currentSymbol == '-'); currentSymbol++) {
@@ -49,7 +49,7 @@ int parseStrIntByLength(char *strInt, int length) {
 }
 
 int parseInt(char *string) {
-    unsigned int length = getLengthOfStrInt(string);
+    int length = getLengthOfStrInt(string);
     int integer = parseStrIntByLength(string, length);
 
     return integer;
