@@ -2,8 +2,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "math.h"
+#include "integers.h"
+
 #define DEBUG 0
-#define MAX_NUMBER_OF_ELEMENTS_FOR_COMPUTE 5
+
+#define NEED_ADD_LISP_EXPRESSION_TO_RESULT_AND_INC_CHAR 2
 
 #define ASCII_CODE(ch) (uint8_t) ch
 
@@ -11,47 +15,94 @@
 #define ASCII_CODE_NINE ASCII_CODE('9')
 
 #define IS_CHAR_NUMBER(ch)  ASCII_CODE(ch) >= ASCII_CODE_ZERO  && ASCII_CODE(ch) <= ASCII_CODE_NINE
-#define CHAR_TO_NUM(ch) ASCII_CODE(ch) - ASCII_CODE_ZERO
+
+void skipSymbols(char **currentChar, int amountSymbols) {
+    (*currentChar) += amountSymbols;
+}
+
+void skipSpaces(char **currentChar) {
+    while (**currentChar == ' ') {
+        (*currentChar)++;
+    }
+}
+
+int handleSymbol(
+        char **currentChar,
+
+        int *result,
+
+        uint32_t *openingBrackets,
+        uint32_t *closingBrackets
+) {
+
+    switch (**currentChar) {
+        case ' ':
+            skipSpaces(currentChar);
+            break;
+        case ')':
+            (*closingBrackets)++;
+            skipSymbols(currentChar, 1);
+            break;
+        case '(':
+            (*openingBrackets)++;
+
+            if (*openingBrackets > 1) {
+                return NEED_ADD_LISP_EXPRESSION_TO_RESULT_AND_INC_CHAR;
+            } else {
+                skipSymbols(currentChar, 1);
+            }
+            break;
+        default:
+            if (IS_CHAR_NUMBER(**currentChar)) {
+                uint32_t lengthOfInteger = getLengthOfStrInt(*currentChar);
+                *result += parseStrIntByLength(*currentChar, lengthOfInteger);
+
+                skipSymbols(currentChar, (int) (lengthOfInteger));
+            } else {
+                skipSymbols(currentChar, 1);
+            }
+    }
+
+    return 0;
+}
+
+
+int getAmountOfSymbolsFromCurrentSymbolToClosingBracket(char* currentSymbol) {
+    int amountOfSymbols = 0;
+
+    for (; *currentSymbol != ')'; currentSymbol++) {
+        amountOfSymbols++;
+    }
+
+    return amountOfSymbols;
+}
 
 int lispToInt(const char *lispExpression) {
-    // !!!!! Note: Lisp expression must end  with $
-    //       If it not end with $, I not it's not my FAIL
+/* | input:
+     !!!!! Note: Lisp expression must end  with $
+           If it not end with $, I not it's not my FAIL
+*/
 
     int result = 0;
 
-    uint8_t openingBrackets = 0;
-    uint8_t closingBrackets = 0;
-
-    int elementsForCompute[MAX_NUMBER_OF_ELEMENTS_FOR_COMPUTE];
-    int inUseElementsForCompute = 0;
+    uint32_t openingBrackets = 0;
+    uint32_t closingBrackets = 0;
 
     char *current_symbol = (char *) lispExpression;
 
-    while (*current_symbol != '$' || openingBrackets != closingBrackets) {
-
-#if DEBUG
-        printf("%c", *current_symbol);
-#endif
-
-        if (*current_symbol == '(') {
-            if (openingBrackets > 1) {
-                result += lispToInt(current_symbol);
-            }
-            openingBrackets++;
-        } else if (*current_symbol == ')') {
-            closingBrackets++;
-        } else if (IS_CHAR_NUMBER(*current_symbol)) {
-            elementsForCompute[inUseElementsForCompute] = CHAR_TO_NUM(*current_symbol);
-            inUseElementsForCompute++;
-
-            result += CHAR_TO_NUM(*current_symbol);
+    while (((openingBrackets != closingBrackets) || (openingBrackets == 0)) && (*current_symbol != '$')) {
+        if (handleSymbol(
+                &current_symbol,
+                &result,
+                &openingBrackets, &closingBrackets
+        ) == NEED_ADD_LISP_EXPRESSION_TO_RESULT_AND_INC_CHAR) {
+            result += lispToInt(current_symbol);
+            current_symbol += getAmountOfSymbolsFromCurrentSymbolToClosingBracket(current_symbol);
         }
-
-        current_symbol++;
     }
 
 #if DEBUG
-    printf("\n%d == %d ???\n", openingBrackets, closingBrackets);
+    printf("%d == %d?\n", openingBrackets, closingBrackets);
 #endif
 
     assert(openingBrackets == closingBrackets);
@@ -61,13 +112,35 @@ int lispToInt(const char *lispExpression) {
 
 
 int main() {
-    int result = lispToInt("(+ 2 2)$");
+    int powerRes = iPow(10, 2);
 
 #if DEBUG
-    printf("result [ %d ]", result);
+    printf("power result [ %d ]\n", powerRes);
 #endif
 
-    assert(result == 4);
+    assert(powerRes == 100);
+
+    int parsedInt = parseInt("1001 ");
+    int parsedIntByLength = parseStrIntByLength("1001 ", 4);
+    uint32_t lengthOfInteger = getLengthOfStrInt("1001 ");
+
+#if DEBUG
+    printf("parsed integer is [ %d ]\n", parsedInt);
+    printf("length of integer is [ %d ]\n", lengthOfInteger);
+    printf("parsed integer by length is [ %d ]\n", parsedIntByLength);
+#endif
+
+    assert(parsedInt == 1001);
+    assert(lengthOfInteger == 4);
+    assert(parsedIntByLength == 1001);
+
+    int lispResult = lispToInt("(+ 200 (+ 100 50) (+ 100 100 150 100) 1000 600 600 (+ 1995 5))");
+
+#if DEBUG
+    printf("result of LISP expression is [ %d ]\n", lispResult);
+#endif
+
+    assert(lispResult == 5000);
 
     return 0;
 }
