@@ -14,29 +14,38 @@ uint32_t getLengthOfStrInt(char *stringInt) {
     uint32_t length = 0;
     char *currentSymbol = stringInt;
 
-    for (; IS_CHAR_NUMBER(*currentSymbol); currentSymbol++) {
+    for (; IS_CHAR_NUMBER(*currentSymbol) || (*currentSymbol == '-'); currentSymbol++) {
         length++;
     }
 
     return length;
 }
 
-int parseStrIntByLength(char *strInt, uint32_t length) {
-    uint32_t amountAdditionalZeros = length - 1;
+int parseStrIntByLength(char *strInt, int length) {
     char *currentSymbol = strInt;
 
+    int coefficient = 1;
     int result = 0;
+
+    int amountAdditionalZeros = length - 1;
+
+    if (*currentSymbol == '-') {
+        coefficient = -1;
+        currentSymbol++;
+        amountAdditionalZeros--;
+        length--;
+    }
 
     for (uint32_t i = 0; i < length; i++) {
         result += (int) (CHAR_TO_NUM(*currentSymbol))
                   *
-                  iPow(10, (int) amountAdditionalZeros);
+                  iPow(10, amountAdditionalZeros);
 
         currentSymbol++;
         amountAdditionalZeros--;
     }
 
-    return result;
+    return result * coefficient;
 }
 
 int parseInt(char *string) {
