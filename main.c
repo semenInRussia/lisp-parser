@@ -83,6 +83,16 @@ int getAmountOfSymbolsFromCurrentSymbolToClosingBracket(char *currentSymbol) {
     return amountOfSymbols;
 }
 
+int sum(const int numbersForCompute[MAX_ELEMENTS_FOR_COMPUTE], uint32_t length) {
+    int result = 0;
+
+    for (uint32_t i = 0; i < length; i++) {
+        result += numbersForCompute[i];
+    }
+
+    return result;
+}
+
 int lispToInt(const char *lispExpression) {
 /* | input:
      [!!!] Note: If Lisp expression not valid, then it must end  with $
@@ -90,12 +100,10 @@ int lispToInt(const char *lispExpression) {
            and it's not my FAIL
 */
 
-    int result = 0;
-
     uint32_t openingBrackets = 0;
     uint32_t closingBrackets = 0;
 
-    int numbersForCompute[MAX_ELEMENTS_FOR_COMPUTE];
+    int numbersForCompute[MAX_ELEMENTS_FOR_COMPUTE] = {0};
     int inUseNumbersForCompute = 0;
 
     char *current_symbol = (char *) lispExpression;
@@ -103,10 +111,11 @@ int lispToInt(const char *lispExpression) {
     while (((openingBrackets != closingBrackets) || (openingBrackets == 0)) && (*current_symbol != '$')) {
         if (handleSymbol(
                 &current_symbol,
-                (int *) numbersForCompute, &inUseNumbersForCompute,
+                numbersForCompute, &inUseNumbersForCompute,
                 &openingBrackets, &closingBrackets
         ) == NEED_ADD_LISP_EXPRESSION_TO_RESULT_AND_INC_CHAR) {
-            numbersForCompute[inUseNumbersForCompute] += lispToInt(current_symbol);
+            *(numbersForCompute + inUseNumbersForCompute) = lispToInt(current_symbol);
+            inUseNumbersForCompute++;
             current_symbol += getAmountOfSymbolsFromCurrentSymbolToClosingBracket(current_symbol);
         }
     }
@@ -117,7 +126,7 @@ int lispToInt(const char *lispExpression) {
 
     assert(openingBrackets == closingBrackets);
 
-    return result;
+    return sum(numbersForCompute, (uint32_t) inUseNumbersForCompute);
 }
 
 
