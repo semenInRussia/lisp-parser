@@ -120,9 +120,7 @@ int lisp_parse_number(LispParser *p, char buf[256]) {
   if (buf[i] == '-') {
     sign = -1;
     ++i;
-  }
-
-  if (buf[i] == '+') {
+  } else if (buf[i] == '+') {
     ++i;
   }
 
@@ -135,7 +133,7 @@ int lisp_parse_number(LispParser *p, char buf[256]) {
 
   ans *= sign;
 
-  if (buf[i] != 0) { // we stop not at the end
+  if (buf[i] != 0) { // we stopped not at the end
     p->err = LISP_ERR_UNDECLARED_SYMBOL;
     return -1;
   }
@@ -299,11 +297,9 @@ int lisp_eval(const char *s, LispError *err) {
 #if LISP_TESTS
 
 #define TEST(body)                                                             \
-  {                                                                            \
-    printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                    \
-    assert(body);                                                              \
-    printf("OK\n");                                                            \
-  }
+  printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                      \
+  assert(body);                                                                \
+  printf("OK\n");
 
 int main() {
   LispError e;
