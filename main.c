@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LISP_TESTS 0
+#define LISP_TESTS 1
 
 typedef enum {
   LISP_TOK_CLOSE,
@@ -119,6 +119,10 @@ int lisp_parse_number(LispParser *p, char buf[256]) {
   int i = 0;
   if (buf[i] == '-') {
     sign = -1;
+    ++i;
+  }
+
+  if (buf[i] == '+') {
     ++i;
   }
 
@@ -316,6 +320,9 @@ int main() {
 
   // Two digits and whitespaces
   TEST(lisp_eval("(+ 22     23)", &e) == 45);
+
+  // Number with sign
+  TEST(lisp_eval("(+ +1 -1)", &e) == 0);
 }
 
 #else
