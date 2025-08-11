@@ -85,6 +85,7 @@ typedef struct {
 } Parser;
 
 int parser_is_eof(Parser p) { return p.pos >= p.len; }
+int parser_is_error(Parser p) { return p.err > 0; }
 
 char parser_getchar(Parser p) {
   if (parser_is_eof(p)) {
@@ -104,8 +105,12 @@ void skip_whitespaces(Parser *p) {
 }
 
 int parse_number(Parser *p, char buf[256]) {
+  if (parser_is_error(*p)) {
+    return -1;
+  }
+
   int ans = 0;
-  int sign = 1;
+  int sign = +1;
   int i = 0;
   if (buf[i] == '-') {
     sign = -1;
@@ -130,6 +135,10 @@ int parse_number(Parser *p, char buf[256]) {
 }
 
 void parser_chop_word(Parser *p, char buf[256]) {
+  if (parser_is_error(*p)) {
+    return;
+  }
+
   skip_whitespaces(p);
 
   if (parser_is_eof(*p)) {
@@ -151,16 +160,16 @@ void parser_chop_word(Parser *p, char buf[256]) {
 }
 
 Token parse_token(Parser *p) {
-  skip_whitespaces(p);
-
   Token tok;
 
-  if (parser_is_eof(*p)) {
-    p->err = ERR_UNBALANCED;
+  if (parser_is_error(*p)) {
     return tok;
   }
 
-  if (p->err > 0) {
+  skip_whitespaces(p);
+
+  if (parser_is_eof(*p)) {
+    p->err = ERR_UNBALANCED;
     return tok;
   }
 
@@ -175,6 +184,9 @@ Token parse_token(Parser *p) {
 
   char buf[256];
   parser_chop_word(p, buf);
+  if (parser_is_error(*p)) {
+    return tok;
+  }
 
   if (strcmp(buf, "+") == 0) {
     tok.kind = TOKEN_OP_ADD;
@@ -200,11 +212,11 @@ Token parse_token(Parser *p) {
 
 int parser_eval(Parser *p) {
   Token tok = parse_token(p);
-  if (p->err > 0) {
+  if (parser_is_error(*p)) {
     return -1;
   }
 
-  switch (tok.kind) {
+  switch (tok.kind) { // ok: '(' or <number>
   case TOKEN_CLOSE:
   case TOKEN_OP_ADD:
   case TOKEN_OP_DIV:
@@ -221,6 +233,9 @@ int parser_eval(Parser *p) {
   }
 
   tok = parse_token(p); // operation
+  if (parser_is_error(*p)) {
+    return -1;
+  }
 
   switch (tok.kind) {
   case TOKEN_CLOSE:
@@ -234,18 +249,31 @@ int parser_eval(Parser *p) {
   case TOKEN_OP_MUL:
   case TOKEN_OP_SUB:
     int a = parser_eval(p);
+    if (parser_is_error(*p)) {
+      return -1;
+    }
+
     int b = parser_eval(p);
+    if (parser_is_error(*p)) {
+      return -1;
+    }
+
     TokenKind knd = tok.kind;
     tok = parse_token(p);
+    if (parser_is_error(*p)) {
+      return -1;
+    }
+
     if (tok.kind != TOKEN_CLOSE) {
       p->err = ERR_UNCLOSED;
       return -1;
     }
+
     return apply(knd, a, b);
   }
 }
 
-int eval(char *s, Error *err_code) {
+int eval(char *s, Error *err) {
   Parser p = {
       .pos = 0,
       .len = strlen(s),
@@ -253,7 +281,7 @@ int eval(char *s, Error *err_code) {
       .err = ERR_NO_ERROR,
   };
   int ans = parser_eval(&p);
-  *err_code = p.err;
+  *err = p.err;
   return ans;
 }
 
@@ -274,12 +302,12 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  Error err_code;
-  int x = eval(argv[1], &err_code);
+  Error err;
+  int x = eval(argv[1], &err);
 
-  if (err_code != ERR_NO_ERROR) {
+  if (err != ERR_NO_ERROR) {
     printf("error occured ");
-    switch (err_code) {
+    switch (err) {
     case ERR_NO_ERROR:
       assert(0 && "unreachable!");
     case ERR_UNBALANCED:
