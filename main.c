@@ -4,108 +4,113 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define LISP_TESTS 0
+
 typedef enum {
-  TOKEN_CLOSE,
-  TOKEN_NUMBER,
-  TOKEN_OPEN,
-  TOKEN_OP_ADD,
-  TOKEN_OP_DIV,
-  TOKEN_OP_MUL,
-  TOKEN_OP_SUB,
-} TokenKind;
+  LISP_TOK_CLOSE,
+  LISP_TOK_NUMBER,
+  LISP_TOK_OPEN,
+  LISP_TOK_OP_ADD,
+  LISP_TOK_OP_DIV,
+  LISP_TOK_OP_MUL,
+  LISP_TOK_OP_SUB,
+} LispTokenTyp;
 
 typedef struct {
-  TokenKind kind;
+  LispTokenTyp kind;
   int num;
-} Token;
+} LispToken;
 
-void print_token(Token tok) {
+typedef enum {
+  LISP_ERR_NO_ERROR = 0,
+  LISP_ERR_INVALID_OP,
+  LISP_ERR_UNCLOSED,
+  LISP_ERR_UNDECLARED_SYMBOL,
+} LispError;
+
+typedef struct {
+  int pos;
+  size_t size;
+  const char *txt;
+  LispError err;
+} LispParser;
+
+// Tokens Operations
+
+void lisp_token_print(LispToken tok) {
   switch (tok.kind) {
-  case TOKEN_CLOSE:
+  case LISP_TOK_CLOSE:
     printf("')'");
     break;
-  case TOKEN_NUMBER:
+  case LISP_TOK_NUMBER:
     printf("'%d'", tok.num);
     break;
-  case TOKEN_OPEN:
+  case LISP_TOK_OPEN:
     printf("'('");
     break;
-  case TOKEN_OP_ADD:
+  case LISP_TOK_OP_ADD:
     printf("'+'");
     break;
-  case TOKEN_OP_DIV:
+  case LISP_TOK_OP_DIV:
     printf("'/'");
     break;
-  case TOKEN_OP_MUL:
+  case LISP_TOK_OP_MUL:
     printf("'*'");
     break;
-  case TOKEN_OP_SUB:
+  case LISP_TOK_OP_SUB:
     printf("'-'");
     break;
   }
 }
 
-int apply(TokenKind op, int a, int b) {
+int lisp_apply_op(LispTokenTyp op, int a, int b) {
   switch (op) {
-  case TOKEN_CLOSE:
-  case TOKEN_NUMBER:
-  case TOKEN_OPEN: {
-    Token t = {.kind = op, .num = 0};
+  case LISP_TOK_CLOSE:
+  case LISP_TOK_NUMBER:
+  case LISP_TOK_OPEN: {
+    LispToken t = {.kind = op, .num = 0};
     printf("Given a ");
-    print_token(t);
+    lisp_token_print(t);
     printf("\n");
     fflush(stdout);
     assert(0 && "check apply first parameter: token, it must be +-*/");
     return -1;
   }
-  case TOKEN_OP_ADD:
+  case LISP_TOK_OP_ADD:
     return a + b;
-  case TOKEN_OP_DIV:
+  case LISP_TOK_OP_DIV:
     return a / b;
-  case TOKEN_OP_MUL:
+  case LISP_TOK_OP_MUL:
     return a * b;
-  case TOKEN_OP_SUB:
+  case LISP_TOK_OP_SUB:
     return a - b;
   }
 }
 
-typedef enum {
-  ERR_NO_ERROR = 0,
-  ERR_INVALID_OP,
-  ERR_UNBALANCED,
-  ERR_UNCLOSED,
-  ERR_UNDECLARED_SYMBOL,
-} Error;
+// Parser Operations : lispp
 
-typedef struct {
-  int pos;
-  size_t len;
-  char *txt;
-  Error err;
-} Parser;
+int lisp_p_is_eof(LispParser p) { return p.pos >= p.size; }
+int lisp_p_is_error(LispParser p) { return p.err > 0; }
 
-int parser_is_eof(Parser p) { return p.pos >= p.len; }
-int parser_is_error(Parser p) { return p.err > 0; }
-
-char parser_getchar(Parser p) {
-  if (parser_is_eof(p)) {
+char lisp_p_getchar(LispParser p) {
+  if (lisp_p_is_eof(p)) {
     assert(0 && "EOF you stupid, check before");
   }
   return p.txt[p.pos];
 }
 
-void skip(Parser *p, int k) { p->pos += k; }
+void lisp_p_skip(LispParser *p, int k) { p->pos += k; }
 
-void skip1(Parser *p) { skip(p, 1); }
+inline void lisp_p_skip1(LispParser *p) { lisp_p_skip(p, 1); }
 
-void skip_whitespaces(Parser *p) {
-  while (!parser_is_eof(*p) && isspace(parser_getchar(*p))) {
-    skip1(p);
+void lisp_p_skip_spaces(LispParser *p) {
+  while (!lisp_p_is_eof(*p) && isspace(lisp_p_getchar(*p))) {
+    lisp_p_skip1(p);
   }
 }
 
-int parse_number(Parser *p, char buf[256]) {
-  if (parser_is_error(*p)) {
+int lisp_parse_number(LispParser *p, char buf[256]) {
+  if (lisp_p_is_error(*p)) {
     return -1;
   }
 
@@ -127,205 +132,241 @@ int parse_number(Parser *p, char buf[256]) {
   ans *= sign;
 
   if (buf[i] != 0) { // we stop not at the end
-    p->err = ERR_UNDECLARED_SYMBOL;
+    p->err = LISP_ERR_UNDECLARED_SYMBOL;
     return -1;
   }
 
   return ans;
 }
 
-void parser_chop_word(Parser *p, char buf[256]) {
-  if (parser_is_error(*p)) {
+void lisp_p_chop_word(LispParser *p, char buf[256]) {
+  if (lisp_p_is_error(*p)) {
     return;
   }
 
-  skip_whitespaces(p);
+  lisp_p_skip_spaces(p);
 
-  if (parser_is_eof(*p)) {
-    p->err = ERR_UNBALANCED;
+  if (lisp_p_is_eof(*p)) {
+    p->err = LISP_ERR_UNCLOSED;
     return;
   }
 
   int i = 0;
-  for (i = 0; !parser_is_eof(*p); i++) {
+  for (i = 0; !lisp_p_is_eof(*p); i++) {
     buf[i] = 0;
-    char ch = parser_getchar(*p);
+    char ch = lisp_p_getchar(*p);
     if (ch == ')' || ch == '(' || isspace(ch)) {
       break;
     }
     buf[i] = ch;
-    skip1(p);
+    lisp_p_skip1(p);
   }
   buf[i++] = 0;
 }
 
-Token parse_token(Parser *p) {
-  Token tok;
+LispToken lisp_parse_token(LispParser *p) {
+  LispToken tok;
 
-  if (parser_is_error(*p)) {
+  if (lisp_p_is_error(*p)) {
     return tok;
   }
 
-  skip_whitespaces(p);
+  lisp_p_skip_spaces(p);
 
-  if (parser_is_eof(*p)) {
-    p->err = ERR_UNBALANCED;
+  if (lisp_p_is_eof(*p)) {
+    p->err = LISP_ERR_UNCLOSED;
     return tok;
   }
 
-  char ch = parser_getchar(*p);
+  char ch = lisp_p_getchar(*p);
 
   // [')', '('] - can't be start of symbol
   if (ch == ')' || ch == '(') {
-    tok.kind = ch == '(' ? TOKEN_OPEN : TOKEN_CLOSE;
-    skip1(p);
+    tok.kind = ch == '(' ? LISP_TOK_OPEN : LISP_TOK_CLOSE;
+    lisp_p_skip1(p);
     return tok;
   }
 
   char buf[256];
-  parser_chop_word(p, buf);
-  if (parser_is_error(*p)) {
+  lisp_p_chop_word(p, buf);
+  if (lisp_p_is_error(*p)) {
     return tok;
   }
 
   if (strcmp(buf, "+") == 0) {
-    tok.kind = TOKEN_OP_ADD;
+    tok.kind = LISP_TOK_OP_ADD;
     return tok;
   }
   if (strcmp(buf, "-") == 0) {
-    tok.kind = TOKEN_OP_SUB;
+    tok.kind = LISP_TOK_OP_SUB;
     return tok;
   }
   if (strcmp(buf, "*") == 0) {
-    tok.kind = TOKEN_OP_MUL;
+    tok.kind = LISP_TOK_OP_MUL;
     return tok;
   }
   if (strcmp(buf, "/") == 0) {
-    tok.kind = TOKEN_OP_DIV;
+    tok.kind = LISP_TOK_OP_DIV;
     return tok;
   }
 
-  tok.kind = TOKEN_NUMBER;
-  tok.num = parse_number(p, buf);
+  tok.kind = LISP_TOK_NUMBER;
+  tok.num = lisp_parse_number(p, buf);
   return tok;
 }
 
-int parser_eval(Parser *p) {
-  Token tok = parse_token(p);
-  if (parser_is_error(*p)) {
+int lisp_p_parse(LispParser *p) {
+  LispToken tok = lisp_parse_token(p);
+  if (lisp_p_is_error(*p)) {
     return -1;
   }
 
   switch (tok.kind) { // ok: '(' or <number>
-  case TOKEN_CLOSE:
-  case TOKEN_OP_ADD:
-  case TOKEN_OP_DIV:
-  case TOKEN_OP_MUL:
-  case TOKEN_OP_SUB:
-    p->err = ERR_UNBALANCED;
+  case LISP_TOK_CLOSE:
+  case LISP_TOK_OP_ADD:
+  case LISP_TOK_OP_DIV:
+  case LISP_TOK_OP_MUL:
+  case LISP_TOK_OP_SUB:
+    p->err = LISP_ERR_UNCLOSED;
     return -1;
 
-  case TOKEN_NUMBER:
+  case LISP_TOK_NUMBER:
     return tok.num;
 
-  case TOKEN_OPEN:
+  case LISP_TOK_OPEN:
     break; // handle below it
   }
 
-  tok = parse_token(p); // operation
-  if (parser_is_error(*p)) {
+  tok = lisp_parse_token(p); // operation
+  if (lisp_p_is_error(*p)) {
     return -1;
   }
 
   switch (tok.kind) {
-  case TOKEN_CLOSE:
-  case TOKEN_NUMBER:
-  case TOKEN_OPEN:
-    p->err = ERR_INVALID_OP;
+  case LISP_TOK_CLOSE:
+  case LISP_TOK_NUMBER:
+  case LISP_TOK_OPEN:
+    p->err = LISP_ERR_INVALID_OP;
     return -1;
 
-  case TOKEN_OP_ADD:
-  case TOKEN_OP_DIV:
-  case TOKEN_OP_MUL:
-  case TOKEN_OP_SUB:
-    int a = parser_eval(p);
-    if (parser_is_error(*p)) {
+  case LISP_TOK_OP_ADD:
+  case LISP_TOK_OP_DIV:
+  case LISP_TOK_OP_MUL:
+  case LISP_TOK_OP_SUB:
+    int a = lisp_p_parse(p);
+    if (lisp_p_is_error(*p)) {
       return -1;
     }
 
-    int b = parser_eval(p);
-    if (parser_is_error(*p)) {
+    int b = lisp_p_parse(p);
+    if (lisp_p_is_error(*p)) {
       return -1;
     }
 
-    TokenKind knd = tok.kind;
-    tok = parse_token(p);
-    if (parser_is_error(*p)) {
+    LispTokenTyp knd = tok.kind;
+    tok = lisp_parse_token(p);
+    if (lisp_p_is_error(*p)) {
       return -1;
     }
 
-    if (tok.kind != TOKEN_CLOSE) {
-      p->err = ERR_UNCLOSED;
+    if (tok.kind != LISP_TOK_CLOSE) {
+      p->err = LISP_ERR_UNCLOSED;
       return -1;
     }
 
-    return apply(knd, a, b);
+    return lisp_apply_op(knd, a, b);
   }
 }
 
-int eval(char *s, Error *err) {
-  Parser p = {
+// public
+
+int lisp_eval(const char *s, LispError *err) {
+  LispParser p = {
       .pos = 0,
-      .len = strlen(s),
+      .size = strlen(s),
       .txt = s,
-      .err = ERR_NO_ERROR,
+      .err = LISP_ERR_NO_ERROR,
   };
-  int ans = parser_eval(&p);
+  int ans = lisp_p_parse(&p);
   *err = p.err;
   return ans;
 }
 
-int main(int argc, char *argv[]) {
-  if (argc != 2) {
-    printf("Usage: %s <s-expression>\n", argv[0]);
-    printf("Evaluate given lisp s-expression and print the result.");
-    printf("\n");
-    printf("Lisp language which is implemented in this file support 4 types of "
-           "operations\n");
-    printf("(+, -, * and /) and 1 type of data: integer\n");
-    printf("\n");
-    printf("Syntax of lisp is very easy, every statement is s-expression that "
-           "have the\n");
-    printf("following form: (<op> arg1 arg2 ...), where op is one of +-*/, "
-           "arg1 is either\n");
-    printf("s-expression or integer\n");
-    return 1;
+#if LISP_TESTS
+
+#define TEST(body)                                                             \
+  {                                                                            \
+    printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                    \
+    assert(body);                                                              \
+    printf("OK\n");                                                            \
   }
 
-  Error err;
-  int x = eval(argv[1], &err);
+int main() {
+  LispError e;
+  printf("Running tests...\n");
 
-  if (err != ERR_NO_ERROR) {
-    printf("error occured ");
+  // Base
+  TEST(lisp_eval("(+ 1 2)", &e) == 3);
+
+  // Inner expressions
+  TEST(lisp_eval("(+ 1 (* 2 2) )", &e) == 5);
+
+  // All operations in one
+  TEST(lisp_eval("(/ (+ 1 (* 2 (- 2 1))) 3)", &e) == 1);
+
+  // Two digits and whitespaces
+  TEST(lisp_eval("(+ 22     23)", &e) == 45);
+}
+
+#else
+
+void usage(const char *program) {
+  printf("Usage: %s <s-expression>\n", program);
+  printf("Evaluate given lisp s-expression and print the result.");
+  printf("\n");
+  printf("Lisp language which is implemented in this file support 4 types of "
+         "operations\n");
+  printf("(+, -, * and /) and 1 type of data: integer\n");
+  printf("\n");
+  printf("Syntax of lisp is very easy, every statement is s-expression that "
+         "have the\n");
+  printf("following form: (<op> arg1 arg2 ...), where op is one of +-*/, "
+         "arg1 is either\n");
+  printf("s-expression or integer\n");
+}
+
+int main(int argc, const char *argv[]) {
+  if (argc != 2) {
+    usage(argv[0]);
+    return ENOENT;
+  }
+
+  if (strcmp(argv[1], "help") == 0) {
+    usage(argv[0]);
+    return 0;
+  }
+
+  LispError err;
+  int x = lisp_eval(argv[1], &err);
+
+  if (err != LISP_ERR_NO_ERROR) {
+    printf("error occured: ");
     switch (err) {
-    case ERR_NO_ERROR:
+    case LISP_ERR_NO_ERROR:
       assert(0 && "unreachable!");
-    case ERR_UNBALANCED:
-      printf("UNBALANCED EXPRESSION");
-      break;
-    case ERR_UNDECLARED_SYMBOL:
+    case LISP_ERR_UNDECLARED_SYMBOL:
       printf("UNDECLARED SYMBOL");
       break;
-    case ERR_INVALID_OP:
+    case LISP_ERR_INVALID_OP:
       printf("INVALID OPERATION");
       break;
-    case ERR_UNCLOSED:
+    case LISP_ERR_UNCLOSED:
       printf("UNCLOSED EXPRESSION");
       break;
     }
-    return 1;
+    return EPERM;
   }
 
-  printf("Result:\n");
-  printf("  %d", x);
+  printf("Result: %d\n", x);
 }
+#endif
