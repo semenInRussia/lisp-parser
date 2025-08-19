@@ -441,7 +441,8 @@ int lisp_eval(const char *s, LispError *err) {
 #define TEST(body)                                                             \
   printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                      \
   assert(body);                                                                \
-  printf("OK\n");
+  printf("OK\n");                                                              \
+  e = 0;
 
 int main() {
   LispError e = LISP_ERR_NO_ERROR;
@@ -461,6 +462,23 @@ int main() {
 
   // Number with sign
   TEST(lisp_eval("(+ +1 -1)", &e) == 0);
+
+  // check on errors:
+
+  // Unclosed expression
+  TEST(lisp_eval("(+ (+ 2 2) ", &e) && e == LISP_ERR_UNCLOSED);
+  TEST(lisp_eval("(+ (+ 2 2 ", &e) && e == LISP_ERR_UNCLOSED);
+
+  // Invalid op
+  TEST(lisp_eval("()", &e) && e == LISP_ERR_INVALID_OP);
+  TEST(lisp_eval("(1 2 3)", &e) && e == LISP_ERR_INVALID_OP);
+
+  // Undeclared symbol
+  TEST(lisp_eval("(himark 2 3)", &e) && e == LISP_ERR_UNDECLARED_SYMBOL);
+  TEST(lisp_eval("(+ 1 (+ a b))", &e) && e == LISP_ERR_UNDECLARED_SYMBOL);
+
+  // Type error
+  TEST(lisp_eval("(+ (- 2 2) *)", &e) && e == LISP_ERR_TYPE);
 }
 
 #else
