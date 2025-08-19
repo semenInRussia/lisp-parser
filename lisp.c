@@ -4,7 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LISP_TESTS 0
+// If you need to run test either uncomment next line or compile the program
+// with -DLISP_FILES flag
+//
+// #define LISP_TESTS
+//
 
 typedef enum {
   LISP_TOK_CLOSE,
@@ -23,6 +27,7 @@ typedef struct {
 
 typedef enum {
   LISP_ERR_NO_ERROR = 0,
+  LISP_ERR_ARGUMENTS,
   LISP_ERR_INVALID_OP,
   LISP_ERR_TYPE,
   LISP_ERR_UNCLOSED,
@@ -286,7 +291,7 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
     }
 
     if (tok.kind != LISP_TOK_CLOSE) {
-      p->err = LISP_ERR_UNCLOSED;
+      p->err = LISP_ERR_ARGUMENTS;
       return expr;
     }
 
@@ -373,7 +378,11 @@ void lisp_expr_print(struct LispExpr *e) {
 void lisp_error_print(LispError err) {
   switch (err) {
   case LISP_ERR_NO_ERROR:
-    assert("SUCCESS! NO ERROR");
+    printf("SUCCESS! NO ERROR");
+    break;
+  case LISP_ERR_ARGUMENTS:
+    printf("ARGUMENTS ERROR");
+    break;
   case LISP_ERR_UNDECLARED_SYMBOL:
     printf("UNDECLARED SYMBOL");
     break;
@@ -436,7 +445,7 @@ int lisp_eval(const char *s, LispError *err) {
   return ans;
 }
 
-#if LISP_TESTS
+#ifdef LISP_TESTS
 
 #define TEST(body)                                                             \
   printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                      \
@@ -468,6 +477,10 @@ int main() {
   // Unclosed expression
   TEST(lisp_eval("(+ (+ 2 2) ", &e) && e == LISP_ERR_UNCLOSED);
   TEST(lisp_eval("(+ (+ 2 2 ", &e) && e == LISP_ERR_UNCLOSED);
+
+  // Arguments error
+  TEST(lisp_eval("(+ 3 3 3)", &e) && e == LISP_ERR_ARGUMENTS);
+  TEST(lisp_eval("(- 3 (+ 1 2) 3)", &e) && e == LISP_ERR_ARGUMENTS);
 
   // Invalid op
   TEST(lisp_eval("()", &e) && e == LISP_ERR_INVALID_OP);
