@@ -24,6 +24,7 @@ typedef struct {
 typedef enum {
   LISP_ERR_NO_ERROR = 0,
   LISP_ERR_INVALID_OP,
+  LISP_ERR_TYPE,
   LISP_ERR_UNCLOSED,
   LISP_ERR_UNDECLARED_SYMBOL,
 } LispError;
@@ -35,7 +36,66 @@ typedef struct {
   LispError err;
 } LispParser;
 
+typedef enum {
+  LISP_EXPR_CALL,
+  LISP_EXPR_NUMBER,
+} LispExprTyp;
+
+typedef enum {
+  LISP_OP_ADD,
+  LISP_OP_DIV,
+  LISP_OP_MUL,
+  LISP_OP_SUB,
+} LispOp;
+
+struct LispExpr {
+  LispExprTyp kind;
+
+  // for call expression (<op> <expr> <expr>), (+ 35 34)
+  // or for operation expressions: +, -, *, /
+  LispOp op;
+  struct LispExpr *a;
+  struct LispExpr *b;
+
+  // for number expression <number>, 34, 420
+  int num;
+};
+
+struct LispExpr *lisp_alloc_expr() {
+  struct LispExpr *e = malloc(sizeof(struct LispExpr));
+  e->a = e->b = NULL;
+  return e;
+}
+
+void lisp_free_expr(struct LispExpr *e) {
+  if (e == NULL) {
+    return;
+  }
+  lisp_free_expr(e->a);
+  lisp_free_expr(e->b);
+  free(e);
+}
+
 // Tokens Operations
+
+void lisp_error_print(LispError err) {
+  switch (err) {
+  case LISP_ERR_NO_ERROR:
+    assert("SUCCESS! NO ERROR");
+  case LISP_ERR_UNDECLARED_SYMBOL:
+    printf("UNDECLARED SYMBOL");
+    break;
+  case LISP_ERR_INVALID_OP:
+    printf("INVALID OPERATION");
+    break;
+  case LISP_ERR_UNCLOSED:
+    printf("UNCLOSED EXPRESSION");
+    break;
+  case LISP_ERR_TYPE:
+    printf("TYPE ERROR");
+    break;
+  }
+}
 
 void lisp_token_print(LispToken tok) {
   switch (tok.kind) {
@@ -60,30 +120,6 @@ void lisp_token_print(LispToken tok) {
   case LISP_TOK_OP_SUB:
     printf("'-'");
     break;
-  }
-}
-
-int lisp_apply_op(LispTokenTyp op, int a, int b) {
-  switch (op) {
-  case LISP_TOK_CLOSE:
-  case LISP_TOK_NUMBER:
-  case LISP_TOK_OPEN: {
-    LispToken t = {.kind = op, .num = 0};
-    printf("Given a ");
-    lisp_token_print(t);
-    printf("\n");
-    fflush(stdout);
-    assert(0 && "check apply first parameter: token, it must be +-*/");
-    return -1;
-  }
-  case LISP_TOK_OP_ADD:
-    return a + b;
-  case LISP_TOK_OP_DIV:
-    return a / b;
-  case LISP_TOK_OP_MUL:
-    return a * b;
-  case LISP_TOK_OP_SUB:
-    return a - b;
   }
 }
 
@@ -217,23 +253,35 @@ LispToken lisp_parse_token(LispParser *p) {
   return tok;
 }
 
-int lisp_p_parse(LispParser *p) {
+// continue parsing expression, keeping `LispParser` structure through proccess.
+//
+// NOTE that every `lisp_p_parse` allocate a memory for expression, so you must
+// don't forgoto to call `lisp_free_expr` before exit program
+struct LispExpr *lisp_p_parse(LispParser *p) {
   LispToken tok = lisp_parse_token(p);
+  struct LispExpr *expr = lisp_alloc_expr();
+
   if (lisp_p_is_error(*p)) {
-    return -1;
+    return expr;
   }
 
   switch (tok.kind) { // ok: '(' or <number>
   case LISP_TOK_CLOSE:
+    p->err = LISP_ERR_UNCLOSED;
+    return expr;
+
   case LISP_TOK_OP_ADD:
   case LISP_TOK_OP_DIV:
   case LISP_TOK_OP_MUL:
   case LISP_TOK_OP_SUB:
-    p->err = LISP_ERR_UNCLOSED;
-    return -1;
+    // expect number, given operation
+    p->err = LISP_ERR_TYPE;
+    return expr;
 
   case LISP_TOK_NUMBER:
-    return tok.num;
+    expr->kind = LISP_EXPR_NUMBER;
+    expr->num = tok.num;
+    return expr;
 
   case LISP_TOK_OPEN:
     break; // handle below it
@@ -241,7 +289,7 @@ int lisp_p_parse(LispParser *p) {
 
   tok = lisp_parse_token(p); // operation
   if (lisp_p_is_error(*p)) {
-    return -1;
+    return expr;
   }
 
   switch (tok.kind) {
@@ -249,34 +297,87 @@ int lisp_p_parse(LispParser *p) {
   case LISP_TOK_NUMBER:
   case LISP_TOK_OPEN:
     p->err = LISP_ERR_INVALID_OP;
-    return -1;
+    return expr;
 
   case LISP_TOK_OP_ADD:
   case LISP_TOK_OP_DIV:
   case LISP_TOK_OP_MUL:
   case LISP_TOK_OP_SUB:
-    int a = lisp_p_parse(p);
+    expr->kind = LISP_EXPR_CALL;
+
+    LispOp arr[256] = {
+        [LISP_TOK_OP_ADD] = LISP_OP_ADD,
+        [LISP_TOK_OP_DIV] = LISP_OP_DIV,
+        [LISP_TOK_OP_MUL] = LISP_OP_MUL,
+        [LISP_TOK_OP_SUB] = LISP_OP_SUB,
+    };
+
+    expr->op = arr[tok.kind];
+
+    struct LispExpr *a = lisp_p_parse(p);
     if (lisp_p_is_error(*p)) {
-      return -1;
+      lisp_free_expr(a);
+      return expr;
     }
 
-    int b = lisp_p_parse(p);
+    struct LispExpr *b = lisp_p_parse(p);
     if (lisp_p_is_error(*p)) {
-      return -1;
+      lisp_free_expr(a);
+      lisp_free_expr(b);
+      return expr;
     }
 
-    LispTokenTyp knd = tok.kind;
     tok = lisp_parse_token(p);
     if (lisp_p_is_error(*p)) {
-      return -1;
+      return expr;
     }
 
     if (tok.kind != LISP_TOK_CLOSE) {
       p->err = LISP_ERR_UNCLOSED;
-      return -1;
+      return expr;
     }
 
-    return lisp_apply_op(knd, a, b);
+    expr->a = a;
+    expr->b = b;
+
+    return expr;
+  }
+}
+
+// evaluate parsed lisp expression
+
+int lisp_apply_op(LispOp op, int a, int b) {
+  switch (op) {
+  case LISP_OP_ADD:
+    return a + b;
+  case LISP_OP_DIV:
+    return a / b;
+  case LISP_OP_MUL:
+    return a * b;
+  case LISP_OP_SUB:
+    return a - b;
+  }
+}
+
+int lisp_eval_expr(struct LispExpr *e, LispError *err) {
+  if (*err > 0) {
+    return 0;
+  }
+  switch (e->kind) {
+  case LISP_EXPR_CALL:
+    LispOp op = e->op;
+    int a = lisp_eval_expr(e->a, err);
+    if (*err > 0) {
+      return -1;
+    }
+    int b = lisp_eval_expr(e->b, err);
+    if (*err > 0) {
+      return -1;
+    }
+    return lisp_apply_op(op, a, b);
+
+  case LISP_EXPR_NUMBER:
+    return e->num;
   }
 }
 
@@ -289,8 +390,14 @@ int lisp_eval(const char *s, LispError *err) {
       .txt = s,
       .err = LISP_ERR_NO_ERROR,
   };
-  int ans = lisp_p_parse(&p);
-  *err = p.err;
+  struct LispExpr *e = lisp_p_parse(&p);
+  if (p.err > 0) {
+    *err = p.err;
+    lisp_free_expr(e);
+    return -1;
+  }
+  int ans = lisp_eval_expr(e, err);
+  lisp_free_expr(e);
   return ans;
 }
 
@@ -302,7 +409,7 @@ int lisp_eval(const char *s, LispError *err) {
   printf("OK\n");
 
 int main() {
-  LispError e;
+  LispError e = LISP_ERR_NO_ERROR;
   printf("Running tests...\n");
 
   // Base
