@@ -291,6 +291,9 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
     struct LispExpr *a = lisp_p_parse(p);
     if (lisp_p_is_error(*p)) {
       lisp_free_expr(a);
+      if (p->err == LISP_ERR_UNBALANCED) {
+        p->err = LISP_ERR_ARGUMENTS;
+      }
       return expr;
     }
 
@@ -298,6 +301,9 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
     if (lisp_p_is_error(*p)) {
       lisp_free_expr(a);
       lisp_free_expr(b);
+      if (p->err == LISP_ERR_UNBALANCED) {
+        p->err = LISP_ERR_ARGUMENTS;
+      }
       return expr;
     }
 
@@ -476,6 +482,21 @@ int lisp_eval(const char *s, LispError *err,
   return ans;
 }
 
+void lisp_report_error(const char *program, const char *src, LispError err,
+                       size_t pos) {
+  const char *label = "    ";
+  fprintf(stderr, "%s: error:\n", program);
+  fprintf(stderr, "%s%s\n", label, src);
+  fprintf(stderr, "%s", label);
+  for (size_t i = 0; i < pos; i++) {
+    fprintf(stderr, " ");
+  }
+  fprintf(stderr, "^\n");
+  fprintf(stderr, "error: ");
+  lisp_error_fprint(stderr, err);
+  fprintf(stderr, "\n");
+}
+
 #ifdef LISP_TESTS
 
 #define TEST(body)                                                             \
@@ -513,10 +534,12 @@ int main() {
   // Arguments error
   TEST(lisp_eval("(+ 3 3 3)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
   TEST(lisp_eval("(- 3 (+ 1 2) 3)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
+  TEST(lisp_eval("(+   3)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
+  TEST(lisp_eval("(+)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
 
   // Invalid op
-  TEST(lisp_eval("()", &e, &pos) && e == LISP_ERR_INVALID_OP);
   TEST(lisp_eval("(1 2 3)", &e, &pos) && e == LISP_ERR_INVALID_OP);
+  TEST(lisp_eval("()", &e, &pos) && e == LISP_ERR_INVALID_OP);
 
   // Undeclared symbol
   TEST(lisp_eval("(himark 2 3)", &e, &pos) && e == LISP_ERR_UNDECLARED_SYMBOL);
@@ -554,17 +577,7 @@ int interactively_eval(const char *program, const char *src) {
   int x = lisp_eval(src, &err, &pos);
 
   if (err != LISP_ERR_NO_ERROR) {
-    const char *label = "    ";
-    fprintf(stderr, "%s: error:\n", program);
-    fprintf(stderr, "%s%s\n", label, src);
-    fprintf(stderr, "%s", label);
-    for (size_t i = 0; i < pos; i++) {
-      fprintf(stderr, " ");
-    }
-    fprintf(stderr, "^\n");
-    fprintf(stderr, "error: ");
-    lisp_error_fprint(stderr, err);
-    fprintf(stderr, "\n");
+    lisp_report_error(program, src, err, pos);
     return EPERM;
   }
 
