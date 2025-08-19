@@ -27,12 +27,17 @@ typedef struct {
 
 typedef enum {
   LISP_ERR_NO_ERROR = 0,
+
+  // parse errors
   LISP_ERR_ARGUMENTS,
   LISP_ERR_INVALID_OP,
   LISP_ERR_TYPE,
   LISP_ERR_UNBALANCED,
   LISP_ERR_UNCLOSED,
   LISP_ERR_UNDECLARED_SYMBOL,
+
+  // runtime errors
+  LISP_ERR_ZERO_DIV,
 } LispError;
 
 typedef struct {
@@ -332,11 +337,15 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
 
 // evaluate parsed lisp expression
 
-int lisp_apply_op(LispOp op, int a, int b) {
+int lisp_apply_op(LispOp op, int a, int b, LispError *err) {
   switch (op) {
   case LISP_OP_ADD:
     return a + b;
   case LISP_OP_DIV:
+    if (b == 0) {
+      *err = LISP_ERR_ZERO_DIV;
+      return 0;
+    }
     return a / b;
   case LISP_OP_MUL:
     return a * b;
@@ -362,7 +371,7 @@ int lisp_eval_expr(struct LispExpr *e, LispError *err) {
     if (*err > 0) {
       return -1;
     }
-    return lisp_apply_op(op, a, b);
+    return lisp_apply_op(op, a, b, err);
 
   case LISP_EXPR_NUMBER:
     return e->num;
@@ -429,6 +438,9 @@ void lisp_error_fprint(FILE *f, LispError err) {
     break;
   case LISP_ERR_UNBALANCED:
     fprintf(f, "UNBALANCED EXPRESSION, )(");
+    break;
+  case LISP_ERR_ZERO_DIV:
+    fprintf(f, "runtime: DIVISION BY ZERO, 1/0");
     break;
   }
 }
@@ -506,6 +518,11 @@ void lisp_report_error(const char *program, const char *src, LispError err,
   printf("OK\n");                                                              \
   e = 0;
 
+int const1(int t) {
+  (void)t;
+  return 1;
+}
+
 int main() {
   LispError e = LISP_ERR_NO_ERROR;
   size_t pos = 0;
@@ -529,28 +546,34 @@ int main() {
   // check on errors:
 
   // Unclosed expression
-  TEST(lisp_eval("(+ (+ 2 2) ", &e, &pos) && e == LISP_ERR_UNCLOSED);
-  TEST(lisp_eval("(+ (+ 2 2 ", &e, &pos) && e == LISP_ERR_UNCLOSED);
+  TEST(const1(lisp_eval("(+ (+ 2 2) ", &e, &pos)) && e == LISP_ERR_UNCLOSED);
+  TEST(const1(lisp_eval("(+ (+ 2 2 ", &e, &pos)) && e == LISP_ERR_UNCLOSED);
 
   // Arguments error
-  TEST(lisp_eval("(+ 3 3 3)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
-  TEST(lisp_eval("(- 3 (+ 1 2) 3)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
-  TEST(lisp_eval("(+   3)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
-  TEST(lisp_eval("(+)", &e, &pos) && e == LISP_ERR_ARGUMENTS);
+  TEST(const1(lisp_eval("(+ 3 3 3)", &e, &pos)) && e == LISP_ERR_ARGUMENTS);
+  TEST(const1(lisp_eval("(- 3 (+ 1 2) 3)", &e, &pos)) &&
+       e == LISP_ERR_ARGUMENTS);
+  TEST(const1(lisp_eval("(+   3)", &e, &pos)) && e == LISP_ERR_ARGUMENTS);
+  TEST(const1(lisp_eval("(+)", &e, &pos)) && e == LISP_ERR_ARGUMENTS);
 
   // Invalid op
-  TEST(lisp_eval("(1 2 3)", &e, &pos) && e == LISP_ERR_INVALID_OP);
-  TEST(lisp_eval("()", &e, &pos) && e == LISP_ERR_INVALID_OP);
+  TEST(const1(lisp_eval("(1 2 3)", &e, &pos)) && e == LISP_ERR_INVALID_OP);
+  TEST(const1(lisp_eval("()", &e, &pos)) && e == LISP_ERR_INVALID_OP);
 
   // Undeclared symbol
-  TEST(lisp_eval("(himark 2 3)", &e, &pos) && e == LISP_ERR_UNDECLARED_SYMBOL);
-  TEST(lisp_eval("(+ 1 (+ a b))", &e, &pos) && e == LISP_ERR_UNDECLARED_SYMBOL);
+  TEST(const1(lisp_eval("(himark 2 3)", &e, &pos)) &&
+       e == LISP_ERR_UNDECLARED_SYMBOL);
+  TEST(const1(lisp_eval("(+ 1 (+ a b))", &e, &pos)) &&
+       e == LISP_ERR_UNDECLARED_SYMBOL);
 
   // Type error
-  TEST(lisp_eval("(+ (- 2 2) *)", &e, &pos) && e == LISP_ERR_TYPE);
+  TEST(const1(lisp_eval("(+ (- 2 2) *)", &e, &pos)) && e == LISP_ERR_TYPE);
 
   // Unbalanced (unopened)
-  TEST(lisp_eval(")", &e, &pos) && e == LISP_ERR_UNBALANCED);
+  TEST(const1(lisp_eval(")", &e, &pos)) && e == LISP_ERR_UNBALANCED);
+
+  // Division by zero
+  TEST(const1(lisp_eval("(/ 3 0)", &e, &pos)) && e == LISP_ERR_ZERO_DIV);
 
   return 0;
 }
