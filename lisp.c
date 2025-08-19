@@ -89,7 +89,7 @@ int lisp_apply_op(LispTokenTyp op, int a, int b) {
 
 // Parser Operations : lispp
 
-int lisp_p_is_eof(LispParser p) { return p.pos >= p.size; }
+int lisp_p_is_eof(LispParser p) { return (size_t)p.pos >= p.size; }
 int lisp_p_is_error(LispParser p) { return p.err > 0; }
 
 char lisp_p_getchar(LispParser p) {
@@ -101,7 +101,7 @@ char lisp_p_getchar(LispParser p) {
 
 void lisp_p_skip(LispParser *p, int k) { p->pos += k; }
 
-inline void lisp_p_skip1(LispParser *p) { lisp_p_skip(p, 1); }
+void lisp_p_skip1(LispParser *p) { lisp_p_skip(p, 1); }
 
 void lisp_p_skip_spaces(LispParser *p) {
   while (!lisp_p_is_eof(*p) && isspace(lisp_p_getchar(*p))) {
@@ -167,7 +167,7 @@ void lisp_p_chop_word(LispParser *p, char buf[256]) {
 }
 
 LispToken lisp_parse_token(LispParser *p) {
-  LispToken tok;
+  LispToken tok = {0};
 
   if (lisp_p_is_error(*p)) {
     return tok;
