@@ -93,7 +93,7 @@ char lisp_p_getchar(LispParser p) {
   return p.txt[p.pos];
 }
 
-void lisp_p_skip(LispParser *p, int k) { p->pos += k; }
+void lisp_p_skip(LispParser *p, size_t k) { p->pos += k; }
 
 void lisp_p_skip1(LispParser *p) { lisp_p_skip(p, 1); }
 
@@ -103,12 +103,10 @@ void lisp_p_skip_spaces(LispParser *p) {
   }
 }
 
-int lisp_parse_number(LispParser *p, char buf[256]) {
-  if (lisp_p_is_error(*p)) {
-    return -1;
-  }
-
-  int ans = 0;
+// return 1 => ok
+//        0 => false
+// read number from buf into x
+int lisp_parse_number(char buf[256], int *x) {
   int sign = +1;
   int i = 0;
   if (buf[i] == '-') {
@@ -118,6 +116,7 @@ int lisp_parse_number(LispParser *p, char buf[256]) {
     ++i;
   }
 
+  int ans = 0;
   while (buf[i] != 0 && isdigit(buf[i])) {
     char ch = buf[i];
     ans *= 10;
@@ -125,14 +124,14 @@ int lisp_parse_number(LispParser *p, char buf[256]) {
     ++i;
   }
 
-  ans *= sign;
-
-  if (buf[i] != 0) { // we stopped not at the end
-    p->err = LISP_ERR_UNDECLARED_SYMBOL;
-    return -1;
+  if (buf[i] != 0) {
+    return 0; // bad
   }
 
-  return ans;
+  ans *= sign;
+  *x = ans;
+
+  return 1; // ok
 }
 
 void lisp_p_chop_word(LispParser *p, char buf[256]) {
@@ -183,6 +182,7 @@ LispToken lisp_parse_token(LispParser *p) {
     return tok;
   }
 
+  size_t old_pos = p->pos;
   char buf[256];
   lisp_p_chop_word(p, buf);
   if (lisp_p_is_error(*p)) {
@@ -207,7 +207,13 @@ LispToken lisp_parse_token(LispParser *p) {
   }
 
   tok.kind = LISP_TOK_NUMBER;
-  tok.num = lisp_parse_number(p, buf);
+  if (!lisp_parse_number(buf, &tok.num)) {
+    p->err = LISP_ERR_UNDECLARED_SYMBOL;
+    p->pos = old_pos;
+    lisp_p_skip_spaces(p);
+    return tok;
+  }
+
   return tok;
 }
 
@@ -216,6 +222,8 @@ LispToken lisp_parse_token(LispParser *p) {
 // NOTE that every `lisp_p_parse` allocate a memory for expression, so you must
 // don't forgoto to call `lisp_free_expr` before exit program
 struct LispExpr *lisp_p_parse(LispParser *p) {
+  size_t old_pos = p->pos;
+
   LispToken tok = lisp_parse_token(p);
   struct LispExpr *expr = lisp_alloc_expr();
 
@@ -225,7 +233,10 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
 
   switch (tok.kind) { // ok: '(' or <number>
   case LISP_TOK_CLOSE:
+    // todo: introduce unbalanced/unopened
     p->err = LISP_ERR_UNCLOSED;
+    p->pos = old_pos;
+    lisp_p_skip_spaces(p);
     return expr;
 
   case LISP_TOK_OP_ADD:
@@ -234,6 +245,8 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
   case LISP_TOK_OP_SUB:
     // expect number, given operation
     p->err = LISP_ERR_TYPE;
+    p->pos = old_pos;
+    lisp_p_skip_spaces(p);
     return expr;
 
   case LISP_TOK_NUMBER:
@@ -245,6 +258,7 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
     break; // handle below it
   }
 
+  old_pos = p->pos;
   tok = lisp_parse_token(p); // operation
   if (lisp_p_is_error(*p)) {
     return expr;
@@ -255,6 +269,8 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
   case LISP_TOK_NUMBER:
   case LISP_TOK_OPEN:
     p->err = LISP_ERR_INVALID_OP;
+    p->pos = old_pos;
+    lisp_p_skip_spaces(p);
     return expr;
 
   case LISP_TOK_OP_ADD:
@@ -285,6 +301,7 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
       return expr;
     }
 
+    old_pos = p->pos;
     tok = lisp_parse_token(p);
     if (lisp_p_is_error(*p)) {
       return expr;
@@ -292,6 +309,8 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
 
     if (tok.kind != LISP_TOK_CLOSE) {
       p->err = LISP_ERR_ARGUMENTS;
+      p->pos = old_pos;
+      lisp_p_skip_spaces(p);
       return expr;
     }
 
@@ -300,6 +319,9 @@ struct LispExpr *lisp_p_parse(LispParser *p) {
 
     return expr;
   }
+
+  assert(0 && "unreachable!");
+  return expr;
 }
 
 // evaluate parsed lisp expression
@@ -315,6 +337,8 @@ int lisp_apply_op(LispOp op, int a, int b) {
   case LISP_OP_SUB:
     return a - b;
   }
+  assert(0 && "unreachable!");
+  return -1;
 }
 
 int lisp_eval_expr(struct LispExpr *e, LispError *err) {
@@ -337,6 +361,8 @@ int lisp_eval_expr(struct LispExpr *e, LispError *err) {
   case LISP_EXPR_NUMBER:
     return e->num;
   }
+  assert(0 && "unreachable!");
+  return -1;
 }
 
 // for debuging:
@@ -375,25 +401,25 @@ void lisp_expr_print(struct LispExpr *e) {
   }
 }
 
-void lisp_error_print(LispError err) {
+void lisp_error_fprint(FILE *f, LispError err) {
   switch (err) {
   case LISP_ERR_NO_ERROR:
-    printf("SUCCESS! NO ERROR");
+    fprintf(f, "SUCCESS! NO ERROR");
     break;
   case LISP_ERR_ARGUMENTS:
-    printf("ARGUMENTS ERROR");
+    fprintf(f, "ARGUMENTS ERROR");
     break;
   case LISP_ERR_UNDECLARED_SYMBOL:
-    printf("UNDECLARED SYMBOL");
+    fprintf(f, "UNDECLARED SYMBOL");
     break;
   case LISP_ERR_INVALID_OP:
-    printf("INVALID OPERATION");
+    fprintf(f, "INVALID OPERATION");
     break;
   case LISP_ERR_UNCLOSED:
-    printf("UNCLOSED EXPRESSION");
+    fprintf(f, "UNCLOSED EXPRESSION");
     break;
   case LISP_ERR_TYPE:
-    printf("TYPE ERROR");
+    fprintf(f, "TYPE ERROR");
     break;
   }
 }
@@ -426,7 +452,8 @@ void lisp_token_print(LispToken tok) {
 
 // public
 
-int lisp_eval(const char *s, LispError *err) {
+int lisp_eval(const char *s, LispError *err,
+              size_t *pos) { // pos - is where error
   LispParser p = {
       .pos = 0,
       .size = strlen(s),
@@ -436,6 +463,7 @@ int lisp_eval(const char *s, LispError *err) {
   struct LispExpr *e = lisp_p_parse(&p);
   if (p.err > 0) {
     *err = p.err;
+    *pos = p.pos;
     lisp_free_expr(e);
     return -1;
   }
@@ -492,6 +520,11 @@ int main() {
 
   // Type error
   TEST(lisp_eval("(+ (- 2 2) *)", &e) && e == LISP_ERR_TYPE);
+
+  // Unbalanced (unopened)
+  TEST(lisp_eval(")", &e) && e == LISP_ERR_UNCLOSED);
+
+  return 0;
 }
 
 #else
@@ -511,6 +544,30 @@ void usage(const char *program) {
   printf("s-expression or integer\n");
 }
 
+int interactively_eval(const char *program, const char *src) {
+  LispError err = 0;
+  size_t pos = 0;
+  int x = lisp_eval(src, &err, &pos);
+
+  if (err != LISP_ERR_NO_ERROR) {
+    const char *label = "    ";
+    fprintf(stderr, "%s: error:\n", program);
+    fprintf(stderr, "%s%s\n", label, src);
+    fprintf(stderr, "%s", label);
+    for (size_t i = 0; i < pos; i++) {
+      fprintf(stderr, " ");
+    }
+    fprintf(stderr, "^\n");
+    fprintf(stderr, "error: ");
+    lisp_error_fprint(stderr, err);
+    fprintf(stderr, "\n");
+    return EPERM;
+  }
+
+  printf("Result: %d\n", x);
+  return 0;
+}
+
 int main(int argc, const char *argv[]) {
   if (argc != 2) {
     usage(argv[0]);
@@ -522,15 +579,6 @@ int main(int argc, const char *argv[]) {
     return 0;
   }
 
-  LispError err;
-  int x = lisp_eval(argv[1], &err);
-
-  if (err != LISP_ERR_NO_ERROR) {
-    fprintf(stderr, "error occured: \n  ");
-    lisp_error_print(err);
-    return EPERM;
-  }
-
-  printf("Result: %d\n", x);
+  return interactively_eval(argv[0], argv[1]);
 }
 #endif
