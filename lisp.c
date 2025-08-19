@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LISP_TESTS 1
+#define LISP_TESTS 0
 
 typedef enum {
   LISP_TOK_CLOSE,
@@ -495,20 +495,8 @@ int main(int argc, const char *argv[]) {
   int x = lisp_eval(argv[1], &err);
 
   if (err != LISP_ERR_NO_ERROR) {
-    printf("error occured: ");
-    switch (err) {
-    case LISP_ERR_NO_ERROR:
-      assert(0 && "unreachable!");
-    case LISP_ERR_UNDECLARED_SYMBOL:
-      printf("UNDECLARED SYMBOL");
-      break;
-    case LISP_ERR_INVALID_OP:
-      printf("INVALID OPERATION");
-      break;
-    case LISP_ERR_UNCLOSED:
-      printf("UNCLOSED EXPRESSION");
-      break;
-    }
+    fprintf(stderr, "error occured: \n  ");
+    lisp_error_print(err);
     return EPERM;
   }
 
