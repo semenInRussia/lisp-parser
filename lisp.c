@@ -76,53 +76,6 @@ void lisp_free_expr(struct LispExpr *e) {
   free(e);
 }
 
-// Tokens Operations
-
-void lisp_error_print(LispError err) {
-  switch (err) {
-  case LISP_ERR_NO_ERROR:
-    assert("SUCCESS! NO ERROR");
-  case LISP_ERR_UNDECLARED_SYMBOL:
-    printf("UNDECLARED SYMBOL");
-    break;
-  case LISP_ERR_INVALID_OP:
-    printf("INVALID OPERATION");
-    break;
-  case LISP_ERR_UNCLOSED:
-    printf("UNCLOSED EXPRESSION");
-    break;
-  case LISP_ERR_TYPE:
-    printf("TYPE ERROR");
-    break;
-  }
-}
-
-void lisp_token_print(LispToken tok) {
-  switch (tok.kind) {
-  case LISP_TOK_CLOSE:
-    printf("')'");
-    break;
-  case LISP_TOK_NUMBER:
-    printf("'%d'", tok.num);
-    break;
-  case LISP_TOK_OPEN:
-    printf("'('");
-    break;
-  case LISP_TOK_OP_ADD:
-    printf("'+'");
-    break;
-  case LISP_TOK_OP_DIV:
-    printf("'/'");
-    break;
-  case LISP_TOK_OP_MUL:
-    printf("'*'");
-    break;
-  case LISP_TOK_OP_SUB:
-    printf("'-'");
-    break;
-  }
-}
-
 // Parser Operations : lispp
 
 int lisp_p_is_eof(LispParser p) { return (size_t)p.pos >= p.size; }
@@ -381,6 +334,87 @@ int lisp_eval_expr(struct LispExpr *e, LispError *err) {
   }
 }
 
+// for debuging:
+
+void lisp_op_print(LispOp op) {
+  switch (op) {
+  case LISP_OP_ADD:
+    printf("ADD");
+    break;
+  case LISP_OP_DIV:
+    printf("DIV");
+    break;
+  case LISP_OP_MUL:
+    printf("MUL");
+    break;
+  case LISP_OP_SUB:
+    printf("SUB");
+    break;
+  }
+}
+
+void lisp_expr_print(struct LispExpr *e) {
+  switch (e->kind) {
+  case LISP_EXPR_CALL:
+    lisp_op_print(e->op);
+    printf("(");
+    lisp_expr_print(e->a);
+    printf(", ");
+    lisp_expr_print(e->b);
+    printf(")");
+    break;
+
+  case LISP_EXPR_NUMBER:
+    printf("%d", e->num);
+    break;
+  }
+}
+
+void lisp_error_print(LispError err) {
+  switch (err) {
+  case LISP_ERR_NO_ERROR:
+    assert("SUCCESS! NO ERROR");
+  case LISP_ERR_UNDECLARED_SYMBOL:
+    printf("UNDECLARED SYMBOL");
+    break;
+  case LISP_ERR_INVALID_OP:
+    printf("INVALID OPERATION");
+    break;
+  case LISP_ERR_UNCLOSED:
+    printf("UNCLOSED EXPRESSION");
+    break;
+  case LISP_ERR_TYPE:
+    printf("TYPE ERROR");
+    break;
+  }
+}
+
+void lisp_token_print(LispToken tok) {
+  switch (tok.kind) {
+  case LISP_TOK_CLOSE:
+    printf("')'");
+    break;
+  case LISP_TOK_NUMBER:
+    printf("'%d'", tok.num);
+    break;
+  case LISP_TOK_OPEN:
+    printf("'('");
+    break;
+  case LISP_TOK_OP_ADD:
+    printf("'+'");
+    break;
+  case LISP_TOK_OP_DIV:
+    printf("'/'");
+    break;
+  case LISP_TOK_OP_MUL:
+    printf("'*'");
+    break;
+  case LISP_TOK_OP_SUB:
+    printf("'-'");
+    break;
+  }
+}
+
 // public
 
 int lisp_eval(const char *s, LispError *err) {
@@ -397,6 +431,7 @@ int lisp_eval(const char *s, LispError *err) {
     return -1;
   }
   int ans = lisp_eval_expr(e, err);
+
   lisp_free_expr(e);
   return ans;
 }
