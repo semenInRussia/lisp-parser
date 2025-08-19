@@ -501,6 +501,7 @@ void lisp_report_error(const char *program, const char *src, LispError err,
 
 #define TEST(body)                                                             \
   printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                      \
+  fflush(stdout);                                                              \
   assert(body);                                                                \
   printf("OK\n");                                                              \
   e = 0;
