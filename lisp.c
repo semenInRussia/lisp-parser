@@ -511,16 +511,98 @@ void lisp_report_error(const char *program, const char *src, LispError err,
 
 #ifdef LISP_TESTS
 
-#define TEST(body)                                                             \
-  printf("%s:%d: info: " #body ": ", __FILE__, __LINE__);                      \
-  fflush(stdout);                                                              \
-  assert(body);                                                                \
-  printf("OK\n");                                                              \
-  e = 0;
+/* #define SHOW_OK_TESTS */
 
-int const1(int t) {
-  (void)t;
-  return 1;
+static int BAD = 0; // count BAD cases
+static int RUN = 0; // count RUNNING tests
+static int verds[4096];
+
+// only for numbers
+void assert_eq_(int a, int b, const char *A, const char *B, const char *file,
+                int line) {
+  int ok = a == b;
+  verds[RUN++] = ok;
+#ifndef SHOW_OK_TESTS
+  if (!ok) {
+#endif
+    printf("Check: %s == %s\n", A, B);
+    printf("Verdict: ");
+#ifndef SHOW_OK_TESTS
+  }
+#endif
+  fflush(stdout);
+  if (!ok) {
+    ++BAD;
+    fprintf(stderr, "BAD\n");
+    fprintf(stderr, "%s:%d: error: %s == %s:\n", file, line, A, B);
+    fprintf(stderr, "got %d, but except %d\n\n", a, b);
+    fflush(stderr);
+  } else {
+#ifdef SHOW_OK_TESTS
+    printf("GOOD\n\n");
+#endif
+  }
+}
+
+#define assert_eq(A, B) assert_eq_(A, B, #A, #B, __FILE__, __LINE__)
+
+void assert_error_(const char *src, const char *exp_s, LispError exp,
+                   const char *file, int line) {
+  LispError e = 0;
+  size_t pos;
+  lisp_eval(src, &e, &pos);
+  int ok = exp == e;
+  verds[RUN++] = ok;
+
+#ifndef SHOW_OK_TESTS
+  if (!ok) {
+#endif
+    printf("Parse: \"%s\", expect %s\n", src, exp_s);
+    printf("Verdict:");
+    fflush(stdout);
+#ifndef SHOW_OK_TESTS
+  }
+#endif
+  if (!ok) {
+    fprintf(stderr, " BAD\n");
+    ++BAD;
+    fprintf(stderr, "%s:%d: error: \"%s\" except throw %s:\n", file, line, src,
+            exp_s);
+    fprintf(stderr, "\tbut got:\n");
+    fprintf(stderr, "```\n");
+    lisp_report_error("lisp", src, e, pos);
+    fprintf(stderr, "```\n\n");
+    fflush(stderr);
+  } else {
+#ifdef SHOW_OK_TESTS
+    printf(" GOOD\n\n");
+#endif
+  }
+}
+
+#define assert_error(src, err) assert_error_(src, #err, err, __FILE__, __LINE__)
+
+void footer() {
+  for (int i = 0; i < RUN; i++) {
+    printf("%c", verds[i] ? '.' : 'E');
+  }
+  printf("\n");
+  fflush(stdout);
+
+  if (BAD > 0) {
+    fprintf(stderr, "%d failed\n", BAD);
+    fflush(stderr);
+  }
+
+  int passed = RUN - BAD;
+  if (passed > 0) {
+    printf("%d passed\n", passed);
+    fflush(stderr);
+  }
+
+  if (BAD == 0) {
+    printf("SUCCESS\n");
+  }
 }
 
 int main() {
@@ -529,53 +611,53 @@ int main() {
   printf("Running tests...\n");
 
   // Base
-  TEST(lisp_eval("(+ 1 2)", &e, &pos) == 3);
+  assert_eq(lisp_eval("(+ 1 2)", &e, &pos), 3);
 
   // Inner expressions
-  TEST(lisp_eval("(+ 1 (* 2 2) )", &e, &pos) == 5);
+  assert_eq(lisp_eval("(+ 1 (* 2 2) )", &e, &pos), 5);
 
   // All operations in one
-  TEST(lisp_eval("(/ (+ 1 (* 2 (- 2 1))) 3)", &e, &pos) == 1);
+  assert_eq(lisp_eval("(/ (+ 1 (* 2 (- 2 1))) 3)", &e, &pos), 1);
 
   // Two digits and whitespaces
-  TEST(lisp_eval("(+ 22     23)", &e, &pos) == 45);
+  assert_eq(lisp_eval("(+ 22     23)", &e, &pos), 45);
 
   // Number with sign
-  TEST(lisp_eval("(+ +1 -1)", &e, &pos) == 0);
+  assert_eq(lisp_eval("(+ +1 -1)", &e, &pos), 0);
 
   // check on errors:
 
   // Unclosed expression
-  TEST(const1(lisp_eval("(+ (+ 2 2) ", &e, &pos)) && e == LISP_ERR_UNCLOSED);
-  TEST(const1(lisp_eval("(+ (+ 2 2 ", &e, &pos)) && e == LISP_ERR_UNCLOSED);
+  assert_error("(+ (+ 2 2) ", LISP_ERR_UNCLOSED);
+  assert_error("(+ (+ 2 2 ", LISP_ERR_UNCLOSED);
 
   // Arguments error
-  TEST(const1(lisp_eval("(+ 3 3 3)", &e, &pos)) && e == LISP_ERR_ARGUMENTS);
-  TEST(const1(lisp_eval("(- 3 (+ 1 2) 3)", &e, &pos)) &&
-       e == LISP_ERR_ARGUMENTS);
-  TEST(const1(lisp_eval("(+   3)", &e, &pos)) && e == LISP_ERR_ARGUMENTS);
-  TEST(const1(lisp_eval("(+)", &e, &pos)) && e == LISP_ERR_ARGUMENTS);
+  assert_error("(+ 3 3 3)", LISP_ERR_ARGUMENTS);
+  assert_error("(- 3 (+ 1 2) 3)", LISP_ERR_ARGUMENTS);
+  assert_error("(+   3)", LISP_ERR_ARGUMENTS);
+  assert_error("(+)", LISP_ERR_ARGUMENTS);
 
   // Invalid op
-  TEST(const1(lisp_eval("(1 2 3)", &e, &pos)) && e == LISP_ERR_INVALID_OP);
-  TEST(const1(lisp_eval("()", &e, &pos)) && e == LISP_ERR_INVALID_OP);
+  assert_error("(1 2 3)", LISP_ERR_INVALID_OP);
+  assert_error("()", LISP_ERR_INVALID_OP);
 
   // Undeclared symbol
-  TEST(const1(lisp_eval("(himark 2 3)", &e, &pos)) &&
-       e == LISP_ERR_UNDECLARED_SYMBOL);
-  TEST(const1(lisp_eval("(+ 1 (+ a b))", &e, &pos)) &&
-       e == LISP_ERR_UNDECLARED_SYMBOL);
+  assert_error("(himark 2 3)", LISP_ERR_UNDECLARED_SYMBOL);
+  assert_error("(+ 1 (+ a b))", LISP_ERR_UNDECLARED_SYMBOL);
 
   // Type error
-  TEST(const1(lisp_eval("(+ (- 2 2) *)", &e, &pos)) && e == LISP_ERR_TYPE);
+  assert_error("(+ (- 2 2) *)", LISP_ERR_TYPE);
 
   // Unbalanced (unopened)
-  TEST(const1(lisp_eval(")", &e, &pos)) && e == LISP_ERR_UNBALANCED);
+  assert_error(")", LISP_ERR_UNBALANCED);
 
   // Division by zero
-  TEST(const1(lisp_eval("(/ 3 0)", &e, &pos)) && e == LISP_ERR_ZERO_DIV);
+  assert_error("(/ 3 0)", LISP_ERR_ZERO_DIV);
 
-  return 0;
+  // info about testing results
+  footer();
+
+  return BAD;
 }
 
 #else
